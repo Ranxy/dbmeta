@@ -126,7 +126,7 @@ pub struct TableMetadata {
     // The engine is the engine of a table.
     pub engine: String,
     // The collation is the collation of a table.
-    pub collation: String,
+    pub collation: Option<String>,
     // The row_count is the estimated number of rows of a table.
     pub row_count: i64,
     // The data_size is the estimated data size of a table.

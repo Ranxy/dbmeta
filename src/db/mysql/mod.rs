@@ -1,5 +1,5 @@
 use crate::db;
-use sqlx::{mysql::MySqlPool, Pool, Row};
+use sqlx::{database, mysql::MySqlPool, Pool, Row};
 use std::collections::HashMap;
 
 use super::{error::DBError, util};
@@ -46,18 +46,20 @@ impl Driver {
         Ok(pversion)
     }
 
-    async fn get_variable(&self, varName: String) -> Result<String, DBError> {
+    async fn get_variable(&self, var_name: String) -> Result<String, DBError> {
         #[derive(sqlx::FromRow)]
         struct Variable {
-            Variable_name: String,
-            Value: String,
+            #[sqlx(rename = "Variable_name")]
+            variable_name: String,
+            #[sqlx(rename = "Value")]
+            value: String,
         }
 
-        let variable = sqlx::query_as::<_, Variable>(&format!("SHOW VARIABLES LIKE '{}'", varName))
+        let variable = sqlx::query_as::<_, Variable>(&format!("SHOW VARIABLES LIKE '{}'", var_name))
             .fetch_one(&self.pool)
             .await?;
 
-        Ok(variable.Value)
+        Ok(variable.value)
     }
 
     async fn get_database(&self) -> Result<Vec<db::store::DatabaseSchemaMetadata>, DBError> {
@@ -117,9 +119,9 @@ impl Driver {
             ORDER BY TABLE_NAME, ORDINAL_POSITION
         ";
 
-        let list = sqlx::query(&query)
+        let list = sqlx::query(query)
             .bind(database_name)
-            .fetch_all(&self.pool)
+            .fetch_all(&self.pool)  
             .await?;
 
         let mut column_map = HashMap::<String, Vec<db::store::ColumnMetadata>>::new();
@@ -150,7 +152,7 @@ impl Driver {
             };
             set_column_metadata_default(&mut col, default, nullable, &extra);
 
-            column_map.entry(table_name).or_insert(Vec::new()).push(col);
+            column_map.entry(table_name).or_default().push(col);
         }
 
         Ok(column_map)
@@ -202,7 +204,7 @@ impl Driver {
             "
         };
 
-        let list = sqlx::query(&query)
+        let list = sqlx::query(query)
             .bind(database_name)
             .fetch_all(&self.pool)
             .await?;
@@ -235,7 +237,7 @@ impl Driver {
                 definition: "".to_string(),
             };
 
-            let mut table_map = index_map.entry(table_name).or_insert(HashMap::new());
+            let table_map = index_map.entry(table_name).or_default();
             let vidx = table_map.entry(index_name).or_insert(idx);
 
             vidx.expressions.push(expression);
@@ -244,11 +246,116 @@ impl Driver {
 
         Ok(index_map)
     }
+
+    async fn load_table_and_view(
+        &self,
+        database_name: &str,
+    ) -> Result<(Vec<db::store::TableMetadata>, Vec<db::store::ViewMetadata>), DBError> {
+        let mut view_map = HashMap::<String, db::store::ViewMetadata>::new();
+
+        let mut table_vec = Vec::<db::store::TableMetadata>::new();
+
+        let view_query = "
+        SELECT
+        TABLE_NAME,
+        VIEW_DEFINITION
+    FROM information_schema.VIEWS
+    WHERE TABLE_SCHEMA = ?
+        ";
+
+        let view_list = sqlx::query(view_query)
+            .bind(database_name)
+            .fetch_all(&self.pool)
+            .await?;
+        for row in view_list {
+            let view_name: String = row.get(0);
+            let definition: String = row.get(1);
+
+            let view = db::store::ViewMetadata {
+                name: view_name.clone(),
+                definition,
+                comment: "".to_string(),
+                dependent_columns: vec![],
+            };
+
+            view_map.insert(view_name, view);
+        }
+
+        let query = "
+        SELECT
+            TABLE_NAME,
+            TABLE_TYPE,
+            IFNULL(ENGINE, ''),
+            IFNULL(TABLE_COLLATION, ''),
+            CAST(IFNULL(TABLE_ROWS, 0) as SIGNED),
+            CAST(IFNULL(DATA_LENGTH, 0) as SIGNED),
+            CAST(IFNULL(INDEX_LENGTH, 0) as SIGNED),
+            CAST(IFNULL(DATA_FREE, 0) as SIGNED),
+            IFNULL(CREATE_OPTIONS, ''),
+            IFNULL(TABLE_COMMENT, '')
+        FROM information_schema.TABLES
+        WHERE TABLE_SCHEMA = ?
+        ORDER BY TABLE_NAME
+        ";
+
+        let list = sqlx::query(query)
+            .bind(database_name)
+            .fetch_all(&self.pool)
+            .await?;
+
+        for row in list {
+            let table_name: String = row.get(0);
+            let table_type: String = row.get(1);
+            let comment: String = row.get(9);
+
+            match table_type.as_str() {
+                VIEW_TABLE_TYPE => {
+                    if let Some(view) = view_map.get_mut(&table_name) {
+                        view.comment = comment;
+                    }
+                    Ok(())
+                }
+                BASE_TABLE_TYPE => {
+                    let engine: String = row.get(2);
+                    let collation: Option<String> = row.get(3);
+                    let row_count: i64 = row.get(4);
+                    let data_size: i64 = row.get(5);
+                    let index_size: i64 = row.get(6);
+                    let data_free: i64 = row.get(7);
+                    let options: String = row.get(8);
+
+                    let table = db::store::TableMetadata {
+                        name: table_name.clone(),
+                        columns: vec![],
+                        indexes: vec![],
+                        engine,
+                        collation,
+                        row_count,
+                        data_size,
+                        index_size,
+                        data_free,
+                        create_options: options,
+                        comment: comment.clone(),
+                    };
+                    table_vec.push(table);
+                    Ok(())
+                }
+                _ => Err(DBError::Unknow(format!(
+                    "Unexpected table_type {}",
+                    table_type
+                ))),
+            }?;
+        }
+
+        let view_vec: Vec<db::store::ViewMetadata> = view_map.into_values().collect();
+
+        Ok((table_vec, view_vec))
+    }
 }
 
 impl super::DB for Driver {
     fn get_type() -> db::Engine {
-        return db::Engine::Mysql;
+        db::Engine::Mysql
     }
 
     async fn sync_instance(&self) -> Result<db::store::InstanceMetadata, DBError> {
@@ -264,7 +371,7 @@ impl super::DB for Driver {
 
 fn parse_version(version: &str) -> Result<(String, String), DBError> {
     let regex = Regex::new(r#"^\d+\.\d+\.\d+"#).map_err(|e| DBError::Unknow(e.to_string()))?;
-    if let Some(loc) = regex.find(&version) {
+    if let Some(loc) = regex.find(version) {
         let start_index = loc.start();
         let end_index = loc.end();
         Ok((
@@ -273,7 +380,7 @@ fn parse_version(version: &str) -> Result<(String, String), DBError> {
         ))
     } else {
         Err(DBError::Unknow(
-            format!("failed to parse version {}", version).into(),
+            format!("failed to parse version {}", version),
         ))
     }
 }
@@ -285,7 +392,7 @@ fn set_column_metadata_default(
     extra: &str,
 ) {
     if let Some(default_str) = default_str {
-        if let Some(default_value) = parse_default_value(&default_str, &extra) {
+        if let Some(default_value) = parse_default_value(&default_str, extra) {
             column.default_value = Some(default_value);
         }
     } else if extra.to_uppercase().contains(AUTO_INCREMENT_SYMBOL) {
@@ -297,7 +404,7 @@ fn set_column_metadata_default(
     }
 
     if extra.contains("on update CURRENT_TIMESTAMP") {
-        if let Some(on_update) = parse_current_timestamp_on_update(&extra) {
+        if let Some(on_update) = parse_current_timestamp_on_update(extra) {
             column.on_update = Some(on_update);
         }
     }
@@ -348,6 +455,8 @@ fn extract_digits_from_current_timestamp(extra: &str) -> Option<&str> {
 }
 
 const AUTO_INCREMENT_SYMBOL: &str = "AUTO_INCREMENT";
+const BASE_TABLE_TYPE: &str = "BASE TABLE";
+const VIEW_TABLE_TYPE: &str = "VIEW";
 
 mod test {
     use crate::db::ConnectionConfig;
@@ -369,18 +478,23 @@ mod test {
 
         let v = d.get_version().await.unwrap();
 
-        println!("VERSION:{:?}", v);
+        println!("VERSION:{:?}\n", v);
 
         let db_metadatas = d.get_database().await.unwrap();
 
-        println!("db:{:?}", db_metadatas);
+        println!("db:{:?}\n", db_metadatas);
 
         let cols = d.sync_columns("exp").await.unwrap();
 
-        println!("cols:{:?}", cols);
+        println!("cols:{:?}\n", cols);
 
         let idxs = d.load_index("exp").await.unwrap();
 
-        println!("idxs:{:?}", idxs);
+        println!("idxs:{:?}\n", idxs);
+
+        let (table, view) = d.load_table_and_view("exp").await.unwrap();
+
+        println!("table:{:?}\n", table);
+        println!("view:{:?}\n", view);
     }
 }

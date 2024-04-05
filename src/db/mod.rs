@@ -1,5 +1,4 @@
 use self::error::DBError;
-use url::Url;
 
 mod error;
 mod mysql;
