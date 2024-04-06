@@ -1,3 +1,5 @@
+use std::{future::Future, pin::Pin};
+
 use self::error::DBError;
 
 mod error;
@@ -24,5 +26,5 @@ pub struct ConnectionConfig {
 pub trait DB {
     fn get_type() -> Engine;
     async fn sync_instance(&self) -> Result<store::InstanceMetadata, DBError>;
-    async fn sync_db(&self) -> Result<store::DatabaseSchemaMetadata, DBError>;
+    async fn sync_database(&self, database_name: &str) -> Result<store::DatabaseSchemaMetadata, DBError>;
 }

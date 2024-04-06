@@ -1,8 +1,8 @@
 use crate::db;
 use sqlx::{database, mysql::MySqlPool, Pool, Row};
-use std::collections::HashMap;
+use std::{collections::HashMap, future::Future, pin::Pin};
 
-use super::{error::DBError, util};
+use super::{error::DBError, store::DatabaseSchemaMetadata, util};
 
 use regex::Regex;
 use version_compare::Version;
@@ -55,14 +55,35 @@ impl Driver {
             value: String,
         }
 
-        let variable = sqlx::query_as::<_, Variable>(&format!("SHOW VARIABLES LIKE '{}'", var_name))
-            .fetch_one(&self.pool)
-            .await?;
+        let variable =
+            sqlx::query_as::<_, Variable>(&format!("SHOW VARIABLES LIKE '{}'", var_name))
+                .fetch_one(&self.pool)
+                .await?;
 
         Ok(variable.value)
     }
 
-    async fn get_database(&self) -> Result<Vec<db::store::DatabaseSchemaMetadata>, DBError> {
+    async fn get_database_info(&self, database_name: &str) -> Result<(String, String), DBError> {
+        let query = "
+        SELECT
+			DEFAULT_CHARACTER_SET_NAME,
+			DEFAULT_COLLATION_NAME
+		FROM information_schema.SCHEMATA
+		WHERE SCHEMA_NAME = ?
+        ";
+
+        let row = sqlx::query(&query)
+            .bind(database_name)
+            .fetch_one(&self.pool)
+            .await?;
+
+        let character_name: String = row.get(0);
+        let collation: String = row.get(1);
+
+        Ok((character_name, collation))
+    }
+
+    async fn load_database(&self) -> Result<Vec<db::store::DatabaseSchemaMetadata>, DBError> {
         let query = format!(
             "SELECT
         SCHEMA_NAME,
@@ -98,7 +119,7 @@ impl Driver {
         Ok(db_metadatas)
     }
 
-    async fn sync_columns(
+    async fn load_column(
         &self,
         database_name: &str,
     ) -> Result<HashMap<String, Vec<db::store::ColumnMetadata>>, DBError> {
@@ -121,7 +142,7 @@ impl Driver {
 
         let list = sqlx::query(query)
             .bind(database_name)
-            .fetch_all(&self.pool)  
+            .fetch_all(&self.pool)
             .await?;
 
         let mut column_map = HashMap::<String, Vec<db::store::ColumnMetadata>>::new();
@@ -364,8 +385,55 @@ impl super::DB for Driver {
         Err(DBError::Args("(todo)".to_string()))
     }
 
-    async fn sync_db(&self) -> Result<db::store::DatabaseSchemaMetadata, DBError> {
-        todo!()
+    async fn sync_database(
+        &self,
+        database_name: &str,
+    ) -> Result<db::store::DatabaseSchemaMetadata, DBError> {
+        let (character_set, collation) = self.get_database_info(database_name).await?;
+
+        let mut index = self.load_index(database_name).await?;
+        let mut columns = self.load_column(database_name).await?;
+        let (mut tables, mut views) = self.load_table_and_view(database_name).await?;
+
+        let tables = tables
+            .into_iter()
+            .map(|mut table| {
+                let table_index_opt = index.remove(&table.name.to_string());
+                if let Some(table_index) = table_index_opt {
+                    let mut index_vec: Vec<db::store::IndexMetadata> =
+                        table_index.into_values().collect();
+                    index_vec.sort_by(|a, b| a.name.cmp(&b.name));
+                    table.indexes = index_vec;
+                }
+
+                let table_column_opt = columns.remove(&table.name.to_string());
+                if let Some(table_columns) = table_column_opt {
+                    table.columns = table_columns;
+                }
+                table
+            })
+            .collect();
+
+        let schema = db::store::SchemaMetadata {
+            name: String::default(),
+            tables,
+            external_tables: vec![],
+            views,
+            functions: vec![],
+            materialized_views: vec![],
+        };
+
+        let dbmeta = db::store::DatabaseSchemaMetadata {
+            name: database_name.to_string(),
+            schemas: vec![schema],
+            character_set: character_set,
+            collation: collation,
+            extensions: vec![],
+            datashare: false,
+            service_name: String::default(),
+        };
+
+        Ok(dbmeta)
     }
 }
 
@@ -379,9 +447,10 @@ fn parse_version(version: &str) -> Result<(String, String), DBError> {
             version[end_index..].to_string(),
         ))
     } else {
-        Err(DBError::Unknow(
-            format!("failed to parse version {}", version),
-        ))
+        Err(DBError::Unknow(format!(
+            "failed to parse version {}",
+            version
+        )))
     }
 }
 
@@ -459,7 +528,7 @@ const BASE_TABLE_TYPE: &str = "BASE TABLE";
 const VIEW_TABLE_TYPE: &str = "VIEW";
 
 mod test {
-    use crate::db::ConnectionConfig;
+    use crate::db::{ConnectionConfig, DB};
 
     use super::Driver;
 
@@ -480,21 +549,12 @@ mod test {
 
         println!("VERSION:{:?}\n", v);
 
-        let db_metadatas = d.get_database().await.unwrap();
+        let db_metadatas = d.load_database().await.unwrap();
 
         println!("db:{:?}\n", db_metadatas);
 
-        let cols = d.sync_columns("exp").await.unwrap();
+        let db = d.sync_database("exp").await.unwrap();
 
-        println!("cols:{:?}\n", cols);
-
-        let idxs = d.load_index("exp").await.unwrap();
-
-        println!("idxs:{:?}\n", idxs);
-
-        let (table, view) = d.load_table_and_view("exp").await.unwrap();
-
-        println!("table:{:?}\n", table);
-        println!("view:{:?}\n", view);
+        println!("exp:{:?}\n", db);
     }
 }
