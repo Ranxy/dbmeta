@@ -1,8 +1,8 @@
 use crate::db;
-use sqlx::{database, mysql::MySqlPool, Pool, Row};
-use std::{collections::HashMap, future::Future, pin::Pin};
+use sqlx::{mysql::MySqlPool, Pool, Row};
+use std::collections::HashMap;
 
-use super::{error::DBError, store::DatabaseSchemaMetadata, util};
+use super::{error::DBError, util};
 
 use regex::Regex;
 use version_compare::Version;
@@ -72,7 +72,7 @@ impl Driver {
 		WHERE SCHEMA_NAME = ?
         ";
 
-        let row = sqlx::query(&query)
+        let row = sqlx::query(query)
             .bind(database_name)
             .fetch_one(&self.pool)
             .await?;
@@ -380,9 +380,18 @@ impl super::DB for Driver {
     }
 
     async fn sync_instance(&self) -> Result<db::store::InstanceMetadata, DBError> {
-        let version = self.get_version().await?;
+        let (version, _) = self.get_version().await?;
 
-        Err(DBError::Args("(todo)".to_string()))
+        let database = self.load_database().await?;
+
+        let instance = db::store::InstanceMetadata {
+            version: version,
+            instance_roles: vec![],
+            databases: database,
+            last_sync: 0,
+        };
+
+        Ok(instance)
     }
 
     async fn sync_database(
@@ -393,7 +402,7 @@ impl super::DB for Driver {
 
         let mut index = self.load_index(database_name).await?;
         let mut columns = self.load_column(database_name).await?;
-        let (mut tables, mut views) = self.load_table_and_view(database_name).await?;
+        let (tables, views) = self.load_table_and_view(database_name).await?;
 
         let tables = tables
             .into_iter()
@@ -526,6 +535,7 @@ fn extract_digits_from_current_timestamp(extra: &str) -> Option<&str> {
 const AUTO_INCREMENT_SYMBOL: &str = "AUTO_INCREMENT";
 const BASE_TABLE_TYPE: &str = "BASE TABLE";
 const VIEW_TABLE_TYPE: &str = "VIEW";
+const LOWER_CASE_TABLE_NAMES: &str = "lower_case_table_names";
 
 mod test {
     use crate::db::{ConnectionConfig, DB};
