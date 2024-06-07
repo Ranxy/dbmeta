@@ -57,6 +57,8 @@ pub struct SchemaMetadata {
     pub views: Vec<ViewMetadata>,
     // The functions is the list of functions in a schema.
     pub functions: Vec<FunctionMetadata>,
+    // The procedures is the list of procedures in a schema.
+    pub procedures: Vec<ProcedureMetadata>,
     // The materialized_views is the list of materialized views in a schema.
     pub materialized_views: Vec<MaterializedViewMetadata>,
 }
@@ -87,6 +89,14 @@ pub struct ViewMetadata {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct FunctionMetadata {
+    // The name is the name of a function.
+    pub name: String,
+    // The definition is the definition of a function.
+    pub definition: String,
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct ProcedureMetadata {
     // The name is the name of a function.
     pub name: String,
     // The definition is the definition of a function.
@@ -139,6 +149,8 @@ pub struct TableMetadata {
     pub create_options: String,
     // The comment is the comment of a table.
     pub comment: String,
+    // The foreign_keys is the list of foreign keys in a table.
+    pub foreign_keys: Vec<ForeignKeyMetadata>,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -193,4 +205,26 @@ pub struct IndexMetadata {
     pub comment: String,
     // The definition of an index.
     pub definition: String,
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct ForeignKeyMetadata {
+    // The name is the name of a foreign key.
+    pub name: String,
+    // The columns are the ordered referencing columns of a foreign key.
+    pub columns: Vec<String>,
+    // The referenced_schema is the referenced schema name of a foreign key.
+    // It is an empty string for databases without such concept such as MySQL.
+    pub referenced_schema: String,
+    // The referenced_table is the referenced table name of a foreign key.
+    pub referenced_table: String,
+    // The referenced_columns are the ordered referenced columns of a foreign key.
+    pub referenced_columns: Vec<String>,
+    // The on_delete is the on delete action of a foreign key.
+    pub on_delete: String,
+    // The on_update is the on update action of a foreign key.
+    pub on_update: String,
+    // The match_type is the match type of a foreign key.
+    // The match_type is the PostgreSQL specific field.
+    pub match_type: String,
 }

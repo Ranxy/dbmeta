@@ -1,5 +1,5 @@
 use crate::db;
-use sqlx::{mysql::MySqlPool, Pool, Row};
+use sqlx::{mysql::MySqlPool, Column, Pool, Row};
 use std::collections::HashMap;
 
 use super::{error::DBError, util};
@@ -13,6 +13,36 @@ pub struct Driver {
     db_type: db::Engine,
     database_name: String,
     pool: Pool<sqlx::MySql>,
+}
+
+macro_rules! create_get_function_procedure_stmt {
+    ($func_name:ident, $column_name:expr) => {
+        async fn $func_name(
+            &self,
+            database_name: &str,
+            function_name: &str,
+        ) -> Result<String, DBError> {
+            let query = format!(
+                "SHOW {} `{}`.`{}`",
+                $column_name, database_name, function_name
+            );
+            let row = sqlx::query(&query).fetch_one(&self.pool).await?;
+
+            let idx = if let Some(idx) = row
+                .columns()
+                .iter()
+                .position(|column| column.name().eq_ignore_ascii_case($column_name))
+            {
+                Ok(idx)
+            } else {
+                Err(DBError::Unknow(format!("Not Find {} Failed", $column_name)))
+            }?;
+
+            let define: String = row.get(idx);
+
+            Ok(define)
+        }
+    };
 }
 
 impl Driver {
@@ -165,11 +195,11 @@ impl Driver {
                 position: position as i32,
                 default_value: None,
                 on_update: None,
-                nullable: nullable,
+                nullable,
                 r#type: column_type,
                 character_set: character_set_name,
-                collation: collation,
-                comment: comment,
+                collation,
+                comment,
             };
             set_column_metadata_default(&mut col, default, nullable, &extra);
 
@@ -192,7 +222,7 @@ impl Driver {
 
         let version8_0_13 = Version::from("8.0.13").unwrap();
 
-        let query = if version.ge(&version8_0_13) || rest.contains("MariaDB") {
+        let query = if version.le(&version8_0_13) || rest.contains("MariaDB") {
             "
             SELECT
                 TABLE_NAME,
@@ -237,7 +267,7 @@ impl Driver {
             let index_name: String = row.get(1);
             let column_name: Option<String> = row.get(2);
             let sub_part: i64 = row.get(3);
-            let expression: String = row.get(4);
+            let expression_name: Option<String> = row.get(4);
             // let seq_in_index: u16 = row.get(5);
             let index_type: String = row.get(5);
             let is_unique: i16 = row.get(6);
@@ -261,11 +291,100 @@ impl Driver {
             let table_map = index_map.entry(table_name).or_default();
             let vidx = table_map.entry(index_name).or_insert(idx);
 
+            let expression = if let Some(column_name) = column_name {
+                column_name
+            } else if let Some(expression_name) = expression_name {
+                format!("({})", expression_name)
+            } else {
+                "".to_string()
+            };
+
             vidx.expressions.push(expression);
             vidx.key_length.push(sub_part);
         }
 
         Ok(index_map)
+    }
+
+    async fn get_foreign_key_list(
+        &self,
+        database_name: &str,
+    ) -> Result<HashMap<String, Vec<db::store::ForeignKeyMetadata>>, DBError> {
+        let query = "
+        SELECT
+            fks.TABLE_NAME,
+            fks.CONSTRAINT_NAME,
+            kcu.COLUMN_NAME,
+            fks.REFERENCED_TABLE_NAME,
+            kcu.REFERENCED_COLUMN_NAME,
+            fks.DELETE_RULE,
+            fks.UPDATE_RULE,
+            fks.MATCH_OPTION
+        FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS fks
+            JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+            ON fks.CONSTRAINT_SCHEMA = kcu.TABLE_SCHEMA
+                AND fks.TABLE_NAME = kcu.TABLE_NAME
+                AND fks.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+        WHERE kcu.POSITION_IN_UNIQUE_CONSTRAINT IS NOT NULL AND LOWER(fks.CONSTRAINT_SCHEMA) = ?
+        ORDER BY fks.TABLE_NAME, fks.CONSTRAINT_NAME, kcu.ORDINAL_POSITION;
+        ";
+
+        let mut fk_map = HashMap::<String, Vec<db::store::ForeignKeyMetadata>>::new();
+
+        let list = sqlx::query(query)
+            .bind(database_name)
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut build_table = String::default();
+        let mut build_fk: Option<db::store::ForeignKeyMetadata> = None;
+
+        for row in list {
+            let table_name: String = row.get(0);
+            let fk_name: String = row.get(1);
+            let col_name: String = row.get(2);
+            let ref_table: String = row.get(3);
+            let ref_col: String = row.get(4);
+            let on_delete: String = row.get(5);
+            let on_update: String = row.get(6);
+            let match_type: String = row.get(7);
+
+            let fk = db::store::ForeignKeyMetadata {
+                name: fk_name,
+                columns: vec![col_name.clone()],
+                referenced_schema: String::default(),
+                referenced_table: ref_table,
+                referenced_columns: vec![ref_col.clone()],
+                on_delete,
+                on_update,
+                match_type,
+            };
+
+            match build_fk {
+                Some(ref mut bfk) => {
+                    if table_name == build_table && bfk.name == fk.name {
+                        bfk.columns.push(col_name);
+                        bfk.referenced_columns.push(ref_col);
+                    } else {
+                        let fk_vec = fk_map.entry(build_table.clone()).or_default();
+                        fk_vec.push(bfk.clone());
+                        build_fk = Some(fk);
+                        build_table = table_name;
+                    }
+                }
+                None => {
+                    build_table = table_name;
+                    build_fk = Some(fk);
+                }
+            }
+        }
+
+        if let Some(bfk) = build_fk {
+            let fk_vec = fk_map.entry(build_table).or_default();
+            fk_vec.push(bfk);
+        }
+
+        Ok(fk_map)
     }
 
     async fn load_table_and_view(
@@ -357,6 +476,7 @@ impl Driver {
                         data_free,
                         create_options: options,
                         comment: comment.clone(),
+                        foreign_keys: vec![],
                     };
                     table_vec.push(table);
                     Ok(())
@@ -372,6 +492,61 @@ impl Driver {
 
         Ok((table_vec, view_vec))
     }
+
+    async fn load_routines(
+        &self,
+        database_name: &str,
+    ) -> Result<
+        (
+            Vec<db::store::FunctionMetadata>,
+            Vec<db::store::ProcedureMetadata>,
+        ),
+        DBError,
+    > {
+        let routines_query = "
+        SELECT
+            ROUTINE_NAME,
+            ROUTINE_TYPE
+        FROM
+            INFORMATION_SCHEMA.ROUTINES
+        WHERE ROUTINE_SCHEMA = ? AND ROUTINE_TYPE IN ('FUNCTION', 'PROCEDURE')
+        ORDER BY ROUTINE_TYPE, ROUTINE_NAME;
+        ";
+
+        let mut functions = vec![];
+        let mut procedures = vec![];
+
+        let routines_list = sqlx::query(routines_query)
+            .bind(database_name)
+            .fetch_all(&self.pool)
+            .await?;
+
+        for row in routines_list {
+            let name: String = row.get(0);
+            let routine_type: String = row.get(1);
+
+            if routine_type.eq_ignore_ascii_case("PROCEDURE") {
+                let define = self.get_create_procedure_stmt(database_name, &name).await?;
+                procedures.push(db::store::ProcedureMetadata {
+                    name,
+                    definition: define,
+                })
+            } else {
+                let define = self.get_create_function_stmt(database_name, &name).await?;
+                functions.push(db::store::FunctionMetadata {
+                    name,
+                    definition: define,
+                })
+            }
+        }
+        Ok((functions, procedures))
+    }
+
+    // Define a function for "Show Create Function"
+    create_get_function_procedure_stmt!(get_create_function_stmt, "Create Function");
+
+    // Define another function for "Show Create Procedure"
+    create_get_function_procedure_stmt!(get_create_procedure_stmt, "Create Procedure");
 }
 
 impl super::DB for Driver {
@@ -382,12 +557,12 @@ impl super::DB for Driver {
     async fn sync_instance(&self) -> Result<db::store::InstanceMetadata, DBError> {
         let (version, _) = self.get_version().await?;
 
-        let database = self.load_database().await?;
+        let databases = self.load_database().await?;
 
         let instance = db::store::InstanceMetadata {
-            version: version,
+            version,
             instance_roles: vec![],
-            databases: database,
+            databases,
             last_sync: 0,
         };
 
@@ -399,9 +574,9 @@ impl super::DB for Driver {
         database_name: &str,
     ) -> Result<db::store::DatabaseSchemaMetadata, DBError> {
         let (character_set, collation) = self.get_database_info(database_name).await?;
-
         let mut index = self.load_index(database_name).await?;
         let mut columns = self.load_column(database_name).await?;
+        let mut foreign_keys = self.get_foreign_key_list(database_name).await?;
         let (tables, views) = self.load_table_and_view(database_name).await?;
 
         let tables = tables
@@ -419,24 +594,32 @@ impl super::DB for Driver {
                 if let Some(table_columns) = table_column_opt {
                     table.columns = table_columns;
                 }
+
+                let fk_opt = foreign_keys.remove(&table.name.to_string());
+                if let Some(fk_list) = fk_opt {
+                    table.foreign_keys = fk_list;
+                }
+
                 table
             })
             .collect();
 
+        let (functions, procedures) = self.load_routines(database_name).await?;
         let schema = db::store::SchemaMetadata {
             name: String::default(),
             tables,
             external_tables: vec![],
             views,
-            functions: vec![],
+            functions,
+            procedures,
             materialized_views: vec![],
         };
 
         let dbmeta = db::store::DatabaseSchemaMetadata {
             name: database_name.to_string(),
             schemas: vec![schema],
-            character_set: character_set,
-            collation: collation,
+            character_set,
+            collation,
             extensions: vec![],
             datashare: false,
             service_name: String::default(),
@@ -535,7 +718,6 @@ fn extract_digits_from_current_timestamp(extra: &str) -> Option<&str> {
 const AUTO_INCREMENT_SYMBOL: &str = "AUTO_INCREMENT";
 const BASE_TABLE_TYPE: &str = "BASE TABLE";
 const VIEW_TABLE_TYPE: &str = "VIEW";
-const LOWER_CASE_TABLE_NAMES: &str = "lower_case_table_names";
 
 mod test {
     use crate::db::{ConnectionConfig, DB};
