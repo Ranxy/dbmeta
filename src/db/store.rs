@@ -30,6 +30,8 @@ pub struct DatabaseSchemaMetadata {
     pub datashare: bool,
     // The service name of the database. It's the Oracle specific concept.
     pub service_name: String,
+    // The database owner. It's used or pg.
+    pub owner: String,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -61,6 +63,9 @@ pub struct SchemaMetadata {
     pub procedures: Vec<ProcedureMetadata>,
     // The materialized_views is the list of materialized views in a schema.
     pub materialized_views: Vec<MaterializedViewMetadata>,
+
+    pub owner: String,
+    pub comment: String,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -151,6 +156,8 @@ pub struct TableMetadata {
     pub comment: String,
     // The foreign_keys is the list of foreign keys in a table.
     pub foreign_keys: Vec<ForeignKeyMetadata>,
+    // The owner is the owner of a table.
+    pub owner: String,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -160,7 +167,7 @@ pub struct ColumnMetadata {
     // The position is the position in columns.
     pub position: i32,
     // The default_value is the default value of a column.
-    pub default_value: Option<ColumnMetadataDefaultValue>,
+    pub default: String,
     // The on_update is the on update action of a column.
     // For MySQL like databases, it's only supported for TIMESTAMP columns with CURRENT_TIMESTAMP as on update value.
     pub on_update: Option<String>,
@@ -174,13 +181,15 @@ pub struct ColumnMetadata {
     pub collation: String,
     // The comment is the comment of a column.
     pub comment: String,
+    // The identity_generation is for identity columns, PG only.
+    pub identity_generation: IdentityGeneration,
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub enum ColumnMetadataDefaultValue {
-    Default(String),
-    DefaultNull(bool),
-    DefaultExpression(String),
+pub enum IdentityGeneration {
+    UNSPECIFIED,
+    Always,
+    ByDefault,
 }
 
 #[derive(Clone, PartialEq, Debug)]
