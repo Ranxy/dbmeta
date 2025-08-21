@@ -1,4 +1,4 @@
-# mlist
+# dbmeta
 
 dbmeta is an open source Rust library for managing and interacting with multiple database backends, including MySQL and PostgreSQL. It provides a unified interface for obtaining database metadata, making it easier to build Rust applications that require metadata from multiple databases.
 
