@@ -10,7 +10,7 @@ Add dbmeta to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-dbmeta = "0.1"
+dbmeta = { version =0.1, features=["db-all"]}
 ```
 
 ### Usage Example

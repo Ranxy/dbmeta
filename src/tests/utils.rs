@@ -30,6 +30,7 @@ macro_rules! init_db_test_service {
         }
     };
 }
-
+#[cfg(any(feature = "db-mysql", feature = "db-tidb"))]
 init_db_test_service!(MYSQL, init_mysql_test_service);
+#[cfg(feature = "db-postgres")]
 init_db_test_service!(POSTGRES, init_pg_test_service);

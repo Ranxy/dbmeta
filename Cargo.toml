@@ -7,10 +7,12 @@ edition = "2021"
 keywords = ["db", "metadata", "mysql", "postgres"]
 
 [features]
-default = [
+default = []
+
+db-all = [
   "db-mysql",
   "db-tidb",
-  "db-postgres",
+  "db-postgres"
 ]
 
 db-mysql=["dep:sqlx"]

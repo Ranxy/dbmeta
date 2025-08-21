@@ -2,13 +2,13 @@
 pub enum DBError {
     Todo,
     Args(String),
-    DB(sqlx::Error),
+    DB(String),
     Unknow(String),
 }
-
+#[cfg(any(feature = "db-mysql", feature = "db-tidb",feature="db-postgres"))]
 impl From<sqlx::Error> for DBError {
     fn from(value: sqlx::Error) -> Self {
-        DBError::DB(value)
+        DBError::DB(value.to_string())
     }
 }
 impl From<url::ParseError> for DBError {
