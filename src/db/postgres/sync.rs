@@ -12,7 +12,7 @@ use std::fmt::Formatter;
 use regex::Regex;
 
 pub struct Driver {
-    // db_type: db::Engine,
+    engine: db::Engine,
     database_name: String,
     pool: Pool<Postgres>,
 }
@@ -20,7 +20,7 @@ pub struct Driver {
 impl Debug for Driver {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut ds = f.debug_struct("Driver");
-
+        ds.field("engine", &self.engine);
         ds.field("database_name", &self.database_name);
         ds.finish()
     }
@@ -28,9 +28,9 @@ impl Debug for Driver {
 
 #[async_trait]
 impl db::DB for Driver {
-    // fn get_type(&self) -> db::Engine {
-    //     db::Engine::Postgres
-    // }
+    fn get_engine(&self) -> db::Engine {
+        self.engine.clone()
+    }
 
     async fn sync_instance(&self) -> Result<db::store::InstanceMetadata, DBError> {
         let version = self.get_version().await?;
@@ -47,15 +47,12 @@ impl db::DB for Driver {
         })
     }
 
-    async fn sync_database(
-        &self,
-        database_name: &str,
-    ) -> Result<db::store::DatabaseSchemaMetadata, DBError> {
+    async fn sync_database(&self) -> Result<db::store::DatabaseSchemaMetadata, DBError> {
         let databases = self.load_database().await?;
         let mut database = databases
             .into_iter()
-            .find(|db| db.name == database_name)
-            .ok_or_else(|| DBError::Args(format!("Database '{database_name}' not found")))?;
+            .find(|db| db.name == self.database_name)
+            .ok_or_else(|| DBError::Args(format!("Database '{}' not found", self.database_name)))?;
 
         let txn = self.pool.begin().await?;
 
@@ -116,7 +113,7 @@ impl Driver {
         let pool = PgPool::connect_with(opt).await?;
 
         Ok(Driver {
-            // db_type: db::Engine::Postgres,
+            engine: cfg.engine.clone(),
             database_name: cfg.database.clone(),
             pool,
         })
@@ -204,7 +201,7 @@ impl Driver {
 
     async fn load_column(
         &self,
-    ) -> Result<HashMap<db::TableKey, Vec<db::store::ColumnMetadata>>, DBError> {
+    ) -> Result<HashMap<util::TableKey, Vec<db::store::ColumnMetadata>>, DBError> {
         let query = format!(
             r"
     SELECT
@@ -230,7 +227,7 @@ impl Driver {
 
         let list = sqlx::query(&query).fetch_all(&self.pool).await?;
 
-        let mut column_map = HashMap::<db::TableKey, Vec<db::store::ColumnMetadata>>::new();
+        let mut column_map = HashMap::<util::TableKey, Vec<db::store::ColumnMetadata>>::new();
 
         for row in list {
             let schema_name: String = row.get("table_schema");
@@ -255,12 +252,10 @@ impl Driver {
                         udt_name.unwrap_or_default()
                     )
                 }
-                "ARRAY" => {
-                    udt_name.unwrap_or_default().to_string()
-                }
+                "ARRAY" => udt_name.unwrap_or_default().to_string(),
                 "character" | "character varying" | "bit" | "bit varying" => {
                     if let Some(length) = character_maximum_length {
-                        format!("{data_type}({length})" )
+                        format!("{data_type}({length})")
                     } else {
                         data_type.clone()
                     }
@@ -285,7 +280,7 @@ impl Driver {
                 },
             };
             column_map
-                .entry(db::TableKey {
+                .entry(util::TableKey {
                     schema: schema_name,
                     table: table_name,
                 })
@@ -298,7 +293,7 @@ impl Driver {
 
     async fn load_index(
         &self,
-    ) -> Result<HashMap<db::TableKey, Vec<db::store::IndexMetadata>>, DBError> {
+    ) -> Result<HashMap<util::TableKey, Vec<db::store::IndexMetadata>>, DBError> {
         let query = format!(
             r"
     SELECT idx.schemaname, idx.tablename, idx.indexname, idx.indexdef, (SELECT 1
@@ -317,7 +312,7 @@ impl Driver {
 
         let list = sqlx::query(&query).fetch_all(&self.pool).await?;
 
-        let mut index_map = HashMap::<db::TableKey, Vec<db::store::IndexMetadata>>::new();
+        let mut index_map = HashMap::<util::TableKey, Vec<db::store::IndexMetadata>>::new();
 
         for row in list {
             let schema_name: String = row.get("schemaname");
@@ -339,7 +334,7 @@ impl Driver {
                 definition: index_def.clone(),
             };
 
-            let key = db::TableKey {
+            let key = util::TableKey {
                 schema: schema_name,
                 table: table_name,
             };
@@ -352,8 +347,8 @@ impl Driver {
 
     async fn load_table(
         &self,
-        column_map: &HashMap<db::TableKey, Vec<db::store::ColumnMetadata>>,
-        index_map: &HashMap<db::TableKey, Vec<db::store::IndexMetadata>>,
+        column_map: &HashMap<util::TableKey, Vec<db::store::ColumnMetadata>>,
+        index_map: &HashMap<util::TableKey, Vec<db::store::IndexMetadata>>,
     ) -> Result<HashMap<String, Vec<db::store::TableMetadata>>, DBError> {
         let query = format!(
             r"
@@ -383,7 +378,7 @@ impl Driver {
             let comment: Option<String> = row.get("comment");
             let owner: String = row.get("tableowner");
 
-            let key = db::TableKey {
+            let key = util::TableKey {
                 schema: schema_name.clone(),
                 table: table_name.clone(),
             };
@@ -445,10 +440,7 @@ impl Driver {
                 dependent_columns: vec![], //TODO we can implement this later
             };
 
-            view_map
-                .entry(schema_name)
-                .or_default()
-                .push(view_metadata);
+            view_map.entry(schema_name).or_default().push(view_metadata);
         }
 
         Ok(view_map)
@@ -553,7 +545,7 @@ mod test {
         let ins = d.sync_instance().await.unwrap();
         println!("Instance Metadata: {:?}", ins);
 
-        let s = d.sync_database("yaseat").await.unwrap();
+        let s = d.sync_database().await.unwrap();
         println!("Database Metadata: {:?}", s);
     }
 }

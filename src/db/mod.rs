@@ -3,15 +3,20 @@ use async_trait::async_trait;
 use std::fmt::Debug;
 
 mod error;
+#[cfg(any(feature = "db-mysql", feature = "db-tidb"))]
 mod mysql;
+#[cfg(feature = "db-postgres")]
 mod postgres;
 pub mod store;
 mod util;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Engine {
+    #[cfg(feature = "db-mysql")]
     MYSQL,
+    #[cfg(feature = "db-tidb")]
     TIDB,
+    #[cfg(feature = "db-postgres")]
     POSTGRES,
 }
 
@@ -25,29 +30,20 @@ pub struct ConnectionConfig {
     pub database: String,
 }
 
-// TableKey is the map key for table metadata.
-#[derive(PartialEq, Eq, Hash, Clone, Debug)]
-struct TableKey {
-    // Schema is the schema of a table.
-    pub schema: String,
-    // Table is the name of a table.
-    pub table: String,
-}
-
 #[async_trait]
 pub trait DB: Send + Sync + Debug + Unpin + 'static {
-    // fn get_type(&self) -> Engine;
+    fn get_engine(&self) -> Engine;
     async fn sync_instance(&self) -> Result<store::InstanceMetadata, DBError>;
-    async fn sync_database(
-        &self,
-        database_name: &str,
-    ) -> Result<store::DatabaseSchemaMetadata, DBError>;
+    async fn sync_database(&self) -> Result<store::DatabaseSchemaMetadata, DBError>;
 }
 
-pub async fn create_driver(engine: Engine, cfg: &ConnectionConfig) -> Result<Box<dyn DB>, DBError> {
-    match engine {
+pub async fn create_driver(cfg: &ConnectionConfig) -> Result<Box<dyn DB>, DBError> {
+    match cfg.engine {
+        #[cfg(feature = "db-mysql")]
         Engine::MYSQL => Ok(Box::new(mysql::Driver::create(cfg).await?)),
+        #[cfg(feature = "db-tidb")]
         Engine::TIDB => Ok(Box::new(mysql::Driver::create(cfg).await?)),
+        #[cfg(feature = "db-postgres")]
         Engine::POSTGRES => Ok(Box::new(postgres::Driver::create(cfg).await?)),
     }
 }

@@ -1,4 +1,4 @@
-use crate::db;
+use crate::db::{self, Engine};
 use crate::db::{error::DBError, util};
 use async_trait::async_trait;
 use sqlx::{mysql::MySqlPool, Column, Pool, Row};
@@ -13,6 +13,7 @@ const SYSTEM_DB: &str = "'information_schema','mysql','performance_schema','sys'
 
 #[derive(Clone)]
 pub struct Driver {
+    engine: Engine,
     database_name: String,
     pool: Pool<sqlx::MySql>,
 }
@@ -20,7 +21,7 @@ pub struct Driver {
 impl Debug for Driver {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut ds = f.debug_struct("Driver");
-
+        ds.field("engine", &self.engine);
         ds.field("database_name", &self.database_name);
         ds.finish()
     }
@@ -28,6 +29,9 @@ impl Debug for Driver {
 
 #[async_trait]
 impl db::DB for Driver {
+    fn get_engine(&self) -> db::Engine {
+        self.engine.clone()
+    }
     async fn sync_instance(&self) -> Result<db::store::InstanceMetadata, DBError> {
         let (version, _) = self.get_version().await?;
 
@@ -43,10 +47,8 @@ impl db::DB for Driver {
         Ok(instance)
     }
 
-    async fn sync_database(
-        &self,
-        database_name: &str,
-    ) -> Result<db::store::DatabaseSchemaMetadata, DBError> {
+    async fn sync_database(&self) -> Result<db::store::DatabaseSchemaMetadata, DBError> {
+        let database_name = &self.database_name;
         let (character_set, collation) = self.get_database_info(database_name).await?;
         let mut index = self.load_index(database_name).await?;
         let mut columns = self.load_column(database_name).await?;
@@ -153,6 +155,7 @@ impl Driver {
         let pool = MySqlPool::connect_with(opt).await?;
 
         Ok(Driver {
+            engine: cfg.engine.clone(),
             database_name: cfg.database.clone(),
             pool,
         })
@@ -745,10 +748,7 @@ mod test {
 
         println!("db:{:?}\n", db_metadatas);
 
-        let db = d
-            .sync_database(&test_config.database.clone())
-            .await
-            .unwrap();
+        let db = d.sync_database().await.unwrap();
 
         println!("exp:{:?}\n", db);
     }

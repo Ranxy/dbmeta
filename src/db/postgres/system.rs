@@ -844,5 +844,9 @@ pub const SYSTEM_TABLES: &[&str] = &[
 ];
 
 lazy_static! {
-    pub static ref SYSTEM_SCHEMAS_STRING: String =  SYSTEM_SCHEMAS.iter().map(|s| format!("'{s}'")).collect::<Vec<_>>().join(",") ;
+    pub static ref SYSTEM_SCHEMAS_STRING: String = SYSTEM_SCHEMAS
+        .iter()
+        .map(|s| format!("'{s}'"))
+        .collect::<Vec<_>>()
+        .join(",");
 }

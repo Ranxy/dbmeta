@@ -1,11 +1,24 @@
 [package]
-name = "mblist"
+authors = ["Ranxy"]
+name = "dbmeta"
 version = "0.1.0"
+repository = "https://github.com/Ranxy/dbmeta"
 edition = "2021"
+keywords = ["db", "metadata", "mysql", "postgres"]
+
+[features]
+default = [
+  "db-mysql",
+  "db-tidb",
+  "db-postgres",
+]
+
+db-mysql=["dep:sqlx"]
+db-tidb=["dep:sqlx"]
+db-postgres=["dep:sqlx"]
 
 [dependencies]
 # tokio + rustls
-sqlx = { version = "0.7", features = [ "runtime-tokio", "runtime-tokio-native-tls","mysql","postgres"] }
 tokio = { version = "1.20.0", features = ["rt", "macros"]}
 url = "2"
 regex = "1.10.4"
@@ -14,3 +27,5 @@ lazy_static = "1.5"
 phf = { version = "0.12.1",features = ["macros"]}
 dotenvy="0.15"
 async-trait = "0.1.68"
+
+sqlx = { version = "0.7", features = [ "runtime-tokio", "runtime-tokio-native-tls","mysql","postgres"] , optional = true }
