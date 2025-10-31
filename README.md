@@ -49,9 +49,8 @@ This project includes comprehensive tests for both MySQL and PostgreSQL backends
 
 Quick start:
 ```bash
-# Start test databases with Docker
-docker run -d --name dbmeta-mysql-test -e MYSQL_ROOT_PASSWORD=test_password -e MYSQL_DATABASE=test_db -p 3306:3306 mysql:8.0
-docker run -d --name dbmeta-postgres-test -e POSTGRES_PASSWORD=test_password -e POSTGRES_DB=test_db -p 5432:5432 postgres:15
+# Start test databases with Docker Compose
+docker-compose up -d
 
 # Copy and configure environment
 cp .env.example .env

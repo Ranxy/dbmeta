@@ -20,7 +20,30 @@ Tests require actual database instances to be running and accessible.
 
 ### Quick Start with Docker
 
-#### 1. Start MySQL
+#### Option 1: Using Docker Compose (Recommended)
+
+The easiest way to start both databases:
+
+```bash
+# Start both databases
+docker-compose up -d
+
+# Check status
+docker-compose ps
+
+# View logs
+docker-compose logs -f
+
+# Stop databases
+docker-compose down
+
+# Stop and remove volumes (clean slate)
+docker-compose down -v
+```
+
+#### Option 2: Using Docker Run Commands
+
+##### 1. Start MySQL
 ```bash
 docker run -d \
   --name dbmeta-mysql-test \
@@ -30,7 +53,7 @@ docker run -d \
   mysql:8.0
 ```
 
-#### 2. Start PostgreSQL
+##### 2. Start PostgreSQL
 ```bash
 docker run -d \
   --name dbmeta-postgres-test \
@@ -41,7 +64,7 @@ docker run -d \
   postgres:15
 ```
 
-#### 3. Configure Environment Variables
+##### 3. Configure Environment Variables
 
 Copy the example environment file and update if needed:
 ```bash
@@ -65,7 +88,7 @@ TEST_POSTGRES_DB_PASSWORD=test_password
 TEST_POSTGRES_DB_DATABASE=test_db
 ```
 
-#### 4. Run Tests
+##### 4. Run Tests
 
 Run all tests:
 ```bash
