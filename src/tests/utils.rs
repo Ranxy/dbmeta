@@ -43,12 +43,13 @@ pub async fn init_mysql_test_schema() -> Result<(), Box<dyn std::error::Error>> 
     let sql_file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/mysql_schema.sql");
     
+    // Use MYSQL_PWD environment variable instead of command line argument for security
     let status = std::process::Command::new("mysql")
+        .env("MYSQL_PWD", &config.password)
         .arg("--protocol=TCP")
         .arg(format!("--host={}", config.host))
         .arg(format!("--port={}", config.port))
         .arg(format!("--user={}", config.username))
-        .arg(format!("--password={}", config.password))
         .arg(&config.database)
         .stdin(std::process::Stdio::from(std::fs::File::open(sql_file_path)?))
         .status()?;
