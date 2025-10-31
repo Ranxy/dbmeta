@@ -618,7 +618,7 @@ mod test {
         assert!(!monthly_sales_mv.definition.is_empty(), "Materialized view definition should not be empty");
 
         // Test 11: Verify functions in sales schema
-        assert!(sales_schema.functions.len() >= 0, "Functions should be loaded");
+        println!("Functions count: {}", sales_schema.functions.len());
         // Note: Functions are commented out in the current implementation
         // When implemented, we can verify: calculate_order_total function exists
 

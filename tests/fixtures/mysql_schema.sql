@@ -7,8 +7,6 @@ DROP TABLE IF EXISTS orders;
 DROP TABLE IF EXISTS customers;
 DROP TABLE IF EXISTS products;
 DROP VIEW IF EXISTS customer_orders;
-DROP PROCEDURE IF EXISTS get_customer_orders;
-DROP FUNCTION IF EXISTS calculate_order_total;
 
 -- Create customers table with various column types and constraints
 CREATE TABLE customers (

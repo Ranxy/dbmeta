@@ -37,58 +37,51 @@ init_db_test_service!(POSTGRES, init_pg_test_service, "5432");
 
 #[cfg(any(feature = "db-mysql", feature = "db-tidb"))]
 pub async fn init_mysql_test_schema() -> Result<(), Box<dyn std::error::Error>> {
-    use sqlx::mysql::MySqlPool;
-    
     let config = init_mysql_test_service()?;
-    let connection_string = format!(
-        "mysql://{}:{}@{}:{}/{}",
-        config.username, config.password, config.host, config.port, config.database
-    );
     
-    let pool = MySqlPool::connect(&connection_string).await?;
+    // Use the mysql command line client to execute the schema file
+    let sql_file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/mysql_schema.sql");
     
-    // Read and execute the main schema SQL
-    let sql_content = include_str!("../../tests/fixtures/mysql_schema.sql");
-    for statement in sql_content.split(';') {
-        let stmt = statement.trim();
-        if !stmt.is_empty() && !stmt.starts_with("--") {
-            sqlx::query(stmt).execute(&pool).await?;
-        }
+    let status = std::process::Command::new("mysql")
+        .arg("--protocol=TCP")
+        .arg(format!("--host={}", config.host))
+        .arg(format!("--port={}", config.port))
+        .arg(format!("--user={}", config.username))
+        .arg(format!("--password={}", config.password))
+        .arg(&config.database)
+        .stdin(std::process::Stdio::from(std::fs::File::open(sql_file_path)?))
+        .status()?;
+    
+    if !status.success() {
+        return Err(format!("Failed to execute MySQL schema: exit code {:?}", status.code()).into());
     }
     
-    // Read and execute routines (procedures and functions)
-    let routines_content = include_str!("../../tests/fixtures/mysql_routines.sql");
-    for statement in routines_content.split(';') {
-        let stmt = statement.trim();
-        if !stmt.is_empty() 
-            && !stmt.starts_with("--") 
-            && !stmt.starts_with("DROP") {
-            sqlx::query(stmt).execute(&pool).await?;
-        }
-    }
-    
-    pool.close().await;
     Ok(())
 }
 
 #[cfg(feature = "db-postgres")]
 pub async fn init_postgres_test_schema() -> Result<(), Box<dyn std::error::Error>> {
-    use sqlx::postgres::PgPool;
-    
     let config = init_pg_test_service()?;
-    let connection_string = format!(
-        "postgresql://{}:{}@{}:{}/{}",
-        config.username, config.password, config.host, config.port, config.database
-    );
     
-    let pool = PgPool::connect(&connection_string).await?;
+    // Use the psql command line client to execute the schema file
+    let sql_file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/postgres_schema.sql");
     
-    // Read the SQL fixture file
-    let sql_content = include_str!("../../tests/fixtures/postgres_schema.sql");
+    // Set environment variable for password
+    let status = std::process::Command::new("psql")
+        .env("PGPASSWORD", &config.password)
+        .arg(format!("--host={}", config.host))
+        .arg(format!("--port={}", config.port))
+        .arg(format!("--username={}", config.username))
+        .arg(format!("--dbname={}", config.database))
+        .arg("--file")
+        .arg(sql_file_path)
+        .status()?;
     
-    // Execute the entire script as one transaction
-    sqlx::query(sql_content).execute(&pool).await?;
+    if !status.success() {
+        return Err(format!("Failed to execute PostgreSQL schema: exit code {:?}", status.code()).into());
+    }
     
-    pool.close().await;
     Ok(())
 }

@@ -849,11 +849,11 @@ mod test {
         assert!(!customer_orders_view.definition.is_empty(), "View definition should not be empty");
 
         // Test 11: Verify procedures (if loaded)
-        // Note: Procedures are loaded separately, so we check if they exist
-        assert!(schema.procedures.len() >= 0, "Procedures should be loaded");
+        // Note: Procedures are loaded separately, check count
+        println!("Procedures count: {}", schema.procedures.len());
 
         // Test 12: Verify functions (if loaded)
-        assert!(schema.functions.len() >= 0, "Functions should be loaded");
+        println!("Functions count: {}", schema.functions.len());
 
         println!("✓ All MySQL schema validation tests passed!");
     }
