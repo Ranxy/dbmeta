@@ -207,7 +207,7 @@ This project is licensed under the Apache License. See the [LICENSE](LICENSE) fi
 
 ## Acknowledgements
 
-Some code is translated from the open-source project [Bytebase](https://github.com/bytebase/bytebase).
+Some codes are translated from the open source project Bytebase.
 
 ## Contributing
 
