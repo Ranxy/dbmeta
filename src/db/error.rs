@@ -5,7 +5,7 @@ pub enum DBError {
     DB(String),
     Unknow(String),
 }
-#[cfg(any(feature = "db-mysql", feature = "db-tidb",feature="db-postgres"))]
+#[cfg(any(feature = "db-mysql", feature = "db-tidb", feature = "db-postgres"))]
 impl From<sqlx::Error> for DBError {
     fn from(value: sqlx::Error) -> Self {
         DBError::DB(value.to_string())
