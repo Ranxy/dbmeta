@@ -37,6 +37,28 @@ fn main() {
 }
 ```
 
+## Development
+
+### Running Tests
+
+This project includes comprehensive tests for both MySQL and PostgreSQL backends. See [TESTING.md](TESTING.md) for detailed instructions on:
+- Setting up test databases locally with Docker
+- Configuring environment variables
+- Running tests for specific database backends
+- Understanding the CI/CD pipeline
+
+Quick start:
+```bash
+# Start test databases with Docker Compose
+docker-compose up -d
+
+# Copy and configure environment
+cp .env.example .env
+
+# Run tests
+cargo test --features db-all
+```
+
 ## License
 
 This project is licensed under the Apache License. See the [LICENSE](LICENSE) file for details.
