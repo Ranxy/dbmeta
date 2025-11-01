@@ -1,8 +1,8 @@
 -- MySQL Stored Procedures and Functions
--- Note: These need to be executed with DELIMITER handling
+DELIMITER $$
 
-DROP PROCEDURE IF EXISTS get_customer_orders;
-DROP FUNCTION IF EXISTS calculate_order_total;
+DROP PROCEDURE IF EXISTS get_customer_orders$$
+DROP FUNCTION IF EXISTS calculate_order_total$$
 
 -- Stored Procedure
 CREATE PROCEDURE get_customer_orders(IN customer_email VARCHAR(255))
@@ -16,7 +16,7 @@ BEGIN
     JOIN customers c ON o.customer_id = c.customer_id
     WHERE c.email = customer_email
     ORDER BY o.order_date DESC;
-END;
+END$$
 
 -- Stored Function
 CREATE FUNCTION calculate_order_total(order_id_param INT)
@@ -30,4 +30,6 @@ BEGIN
     FROM order_items
     WHERE order_id = order_id_param;
     RETURN IFNULL(total, 0.00);
-END;
+END$$
+
+DELIMITER ;
