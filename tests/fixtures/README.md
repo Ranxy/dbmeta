@@ -15,6 +15,11 @@ This directory contains predefined DDL (Data Definition Language) scripts for te
   - One view (customer_orders)
   - Test data for validation
 
+- **`mysql_routines.sql`**: MySQL stored procedures and functions:
+  - `get_customer_orders` procedure - retrieves orders for a customer by email
+  - `calculate_order_total` function - calculates the total amount for an order
+  - These are loaded and validated in the test suite
+
 ### PostgreSQL Fixtures
 
 - **`postgres_schema.sql`**: Comprehensive PostgreSQL schema with:

@@ -64,6 +64,31 @@ pub async fn init_mysql_test_schema() -> Result<(), Box<dyn std::error::Error>> 
         .into());
     }
 
+    // Execute the routines file (stored procedures and functions)
+    let routines_file_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mysql_routines.sql");
+
+    // Use --delimiter to handle procedure/function definitions
+    let routines_status = std::process::Command::new("mysql")
+        .env("MYSQL_PWD", &config.password)
+        .arg("--protocol=TCP")
+        .arg(format!("--host={}", config.host))
+        .arg(format!("--port={}", config.port))
+        .arg(format!("--user={}", config.username))
+        .arg(&config.database)
+        .stdin(std::process::Stdio::from(std::fs::File::open(
+            routines_file_path,
+        )?))
+        .status()?;
+
+    if !routines_status.success() {
+        return Err(format!(
+            "Failed to execute MySQL routines: exit code {:?}",
+            routines_status.code()
+        )
+        .into());
+    }
+
     Ok(())
 }
 

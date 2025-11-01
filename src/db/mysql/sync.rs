@@ -897,12 +897,23 @@ mod test {
             "View definition should not be empty"
         );
 
-        // Test 11: Verify procedures (if loaded)
-        // Note: Procedures are loaded separately, check count
-        println!("Procedures count: {}", schema.procedures.len());
+        // Test 11: Verify procedures are loaded
+        assert_eq!(schema.procedures.len(), 1, "Should have 1 stored procedure");
+        let get_customer_orders_proc = &schema.procedures[0];
+        assert_eq!(get_customer_orders_proc.name, "get_customer_orders");
+        assert!(
+            !get_customer_orders_proc.definition.is_empty(),
+            "Procedure definition should not be empty"
+        );
 
-        // Test 12: Verify functions (if loaded)
-        println!("Functions count: {}", schema.functions.len());
+        // Test 12: Verify functions are loaded
+        assert_eq!(schema.functions.len(), 1, "Should have 1 stored function");
+        let calculate_order_total_func = &schema.functions[0];
+        assert_eq!(calculate_order_total_func.name, "calculate_order_total");
+        assert!(
+            !calculate_order_total_func.definition.is_empty(),
+            "Function definition should not be empty"
+        );
 
         println!("✓ All MySQL schema validation tests passed!");
     }
