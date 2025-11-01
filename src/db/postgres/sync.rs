@@ -509,7 +509,9 @@ mod test {
     #[tokio::test]
     async fn test_postgres_schema_validation() {
         // Initialize the test schema
-        init_postgres_test_schema().await.expect("Failed to initialize test schema");
+        init_postgres_test_schema()
+            .await
+            .expect("Failed to initialize test schema");
 
         // Get the driver
         let driver = get_driver().await;
@@ -529,93 +531,159 @@ mod test {
 
         // Test 4: Verify schemas
         // Should have at least 2 custom schemas: sales and inventory
-        assert!(db.schemas.len() >= 2, "Should have at least 2 schemas (sales, inventory)");
-        
-        let sales_schema = db.schemas.iter()
+        assert!(
+            db.schemas.len() >= 2,
+            "Should have at least 2 schemas (sales, inventory)"
+        );
+
+        let sales_schema = db
+            .schemas
+            .iter()
             .find(|s| s.name == "sales")
             .expect("sales schema should exist");
-        
-        let inventory_schema = db.schemas.iter()
+
+        let inventory_schema = db
+            .schemas
+            .iter()
             .find(|s| s.name == "inventory")
             .expect("inventory schema should exist");
 
         // Test 5: Verify tables in sales schema
-        assert_eq!(sales_schema.tables.len(), 3, "sales schema should have 3 tables");
-        
-        let customers_table = sales_schema.tables.iter()
+        assert_eq!(
+            sales_schema.tables.len(),
+            3,
+            "sales schema should have 3 tables"
+        );
+
+        let customers_table = sales_schema
+            .tables
+            .iter()
             .find(|t| t.name == "customers")
             .expect("customers table should exist in sales schema");
-        
+
         assert_eq!(customers_table.comment, "Customer information");
-        assert_eq!(customers_table.columns.len(), 11, "customers table should have 11 columns");
-        
+        assert_eq!(
+            customers_table.columns.len(),
+            11,
+            "customers table should have 11 columns"
+        );
+
         // Verify primary key column
-        let customer_id_col = customers_table.columns.iter()
+        let customer_id_col = customers_table
+            .columns
+            .iter()
             .find(|c| c.name == "customer_id")
             .expect("customer_id column should exist");
-        assert!(customer_id_col.r#type.contains("int"), "customer_id should be integer type");
-        assert!(!customer_id_col.nullable, "customer_id should not be nullable");
+        assert!(
+            customer_id_col.r#type.contains("int"),
+            "customer_id should be integer type"
+        );
+        assert!(
+            !customer_id_col.nullable,
+            "customer_id should not be nullable"
+        );
 
         // Verify email column
-        let email_col = customers_table.columns.iter()
+        let email_col = customers_table
+            .columns
+            .iter()
             .find(|c| c.name == "email")
             .expect("email column should exist");
-        assert!(email_col.r#type.contains("varchar") || email_col.r#type.contains("character varying"), 
-                "email should be varchar/character varying type");
+        assert!(
+            email_col.r#type.contains("varchar") || email_col.r#type.contains("character varying"),
+            "email should be varchar/character varying type"
+        );
         assert!(!email_col.nullable, "email should not be nullable");
 
         // Verify indexes on customers table
-        assert!(customers_table.indexes.len() >= 3, "customers table should have at least 3 indexes");
-        
-        let primary_idx = customers_table.indexes.iter()
+        assert!(
+            customers_table.indexes.len() >= 3,
+            "customers table should have at least 3 indexes"
+        );
+
+        let primary_idx = customers_table
+            .indexes
+            .iter()
             .find(|i| i.primary)
             .expect("PRIMARY index should exist");
         assert!(primary_idx.primary, "Should be marked as primary");
 
         // Test 6: Verify orders table
-        let orders_table = sales_schema.tables.iter()
+        let orders_table = sales_schema
+            .tables
+            .iter()
             .find(|t| t.name == "orders")
             .expect("orders table should exist in sales schema");
-        
+
         assert_eq!(orders_table.comment, "Customer orders");
-        
+
         // Verify status column uses custom enum type
-        let status_col = orders_table.columns.iter()
+        let status_col = orders_table
+            .columns
+            .iter()
             .find(|c| c.name == "status")
             .expect("status column should exist");
-        assert!(status_col.r#type.contains("order_status"), 
-                "status column should use order_status enum type");
+        assert!(
+            status_col.r#type.contains("order_status"),
+            "status column should use order_status enum type"
+        );
 
         // Test 7: Verify products table in inventory schema
-        assert_eq!(inventory_schema.tables.len(), 1, "inventory schema should have 1 table");
-        
-        let products_table = inventory_schema.tables.iter()
+        assert_eq!(
+            inventory_schema.tables.len(),
+            1,
+            "inventory schema should have 1 table"
+        );
+
+        let products_table = inventory_schema
+            .tables
+            .iter()
             .find(|t| t.name == "products")
             .expect("products table should exist in inventory schema");
-        
+
         assert_eq!(products_table.comment, "Product catalog");
-        assert_eq!(products_table.columns.len(), 7, "products table should have 7 columns");
+        assert_eq!(
+            products_table.columns.len(),
+            7,
+            "products table should have 7 columns"
+        );
 
         // Test 8: Verify order_items table
-        let order_items_table = sales_schema.tables.iter()
+        let order_items_table = sales_schema
+            .tables
+            .iter()
             .find(|t| t.name == "order_items")
             .expect("order_items table should exist in sales schema");
-        
+
         assert_eq!(order_items_table.comment, "Items in orders");
 
         // Test 9: Verify views in sales schema
-        assert_eq!(sales_schema.views.len(), 1, "sales schema should have 1 view");
+        assert_eq!(
+            sales_schema.views.len(),
+            1,
+            "sales schema should have 1 view"
+        );
         let customer_orders_view = &sales_schema.views[0];
         assert_eq!(customer_orders_view.name, "customer_order_summary");
         assert_eq!(customer_orders_view.comment, "Summary of customer orders");
-        assert!(!customer_orders_view.definition.is_empty(), "View definition should not be empty");
+        assert!(
+            !customer_orders_view.definition.is_empty(),
+            "View definition should not be empty"
+        );
 
         // Test 10: Verify materialized views in sales schema
-        assert_eq!(sales_schema.materialized_views.len(), 1, "sales schema should have 1 materialized view");
+        assert_eq!(
+            sales_schema.materialized_views.len(),
+            1,
+            "sales schema should have 1 materialized view"
+        );
         let monthly_sales_mv = &sales_schema.materialized_views[0];
         assert_eq!(monthly_sales_mv.name, "monthly_sales");
         assert_eq!(monthly_sales_mv.comment, "Monthly sales statistics");
-        assert!(!monthly_sales_mv.definition.is_empty(), "Materialized view definition should not be empty");
+        assert!(
+            !monthly_sales_mv.definition.is_empty(),
+            "Materialized view definition should not be empty"
+        );
 
         // Test 11: Verify functions in sales schema
         println!("Functions count: {}", sales_schema.functions.len());

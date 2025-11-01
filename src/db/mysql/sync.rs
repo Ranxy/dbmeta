@@ -728,7 +728,7 @@ const VIEW_TABLE_TYPE: &str = "VIEW";
 mod test {
 
     use crate::db::DB;
-    use crate::tests::{init_mysql_test_service, init_mysql_test_schema};
+    use crate::tests::{init_mysql_test_schema, init_mysql_test_service};
 
     use super::Driver;
 
@@ -739,7 +739,9 @@ mod test {
         println!("TEST_CONFIG:{:?}\n", test_config);
 
         // Initialize the test schema
-        init_mysql_test_schema().await.expect("Failed to initialize test schema");
+        init_mysql_test_schema()
+            .await
+            .expect("Failed to initialize test schema");
 
         // Create the driver
         let driver = Driver::create_driver(&test_config).await.unwrap();
@@ -761,57 +763,91 @@ mod test {
         let schema = &db.schemas[0];
 
         // Test 5: Verify tables count
-        assert_eq!(schema.tables.len(), 4, "Should have 4 tables: customers, products, orders, order_items");
+        assert_eq!(
+            schema.tables.len(),
+            4,
+            "Should have 4 tables: customers, products, orders, order_items"
+        );
 
         // Test 6: Validate customers table
-        let customers_table = schema.tables.iter()
+        let customers_table = schema
+            .tables
+            .iter()
             .find(|t| t.name == "customers")
             .expect("customers table should exist");
-        
+
         assert_eq!(customers_table.comment, "Customer information");
         assert_eq!(customers_table.engine, "InnoDB");
-        assert_eq!(customers_table.columns.len(), 11, "customers table should have 11 columns");
-        
+        assert_eq!(
+            customers_table.columns.len(),
+            11,
+            "customers table should have 11 columns"
+        );
+
         // Verify primary key column
-        let customer_id_col = customers_table.columns.iter()
+        let customer_id_col = customers_table
+            .columns
+            .iter()
             .find(|c| c.name == "customer_id")
             .expect("customer_id column should exist");
         assert_eq!(customer_id_col.r#type, "int");
         assert_eq!(customer_id_col.default, "AUTO_INCREMENT");
-        assert!(!customer_id_col.nullable, "customer_id should not be nullable");
+        assert!(
+            !customer_id_col.nullable,
+            "customer_id should not be nullable"
+        );
 
         // Verify email column
-        let email_col = customers_table.columns.iter()
+        let email_col = customers_table
+            .columns
+            .iter()
             .find(|c| c.name == "email")
             .expect("email column should exist");
         assert_eq!(email_col.r#type, "varchar(255)");
         assert!(!email_col.nullable, "email should not be nullable");
 
         // Verify indexes on customers table
-        assert!(customers_table.indexes.len() >= 3, "customers table should have at least 3 indexes");
-        
-        let primary_idx = customers_table.indexes.iter()
+        assert!(
+            customers_table.indexes.len() >= 3,
+            "customers table should have at least 3 indexes"
+        );
+
+        let primary_idx = customers_table
+            .indexes
+            .iter()
             .find(|i| i.name == "PRIMARY")
             .expect("PRIMARY index should exist");
         assert!(primary_idx.primary, "PRIMARY should be marked as primary");
         assert!(primary_idx.unique, "PRIMARY should be unique");
 
         // Test 7: Validate products table
-        let products_table = schema.tables.iter()
+        let products_table = schema
+            .tables
+            .iter()
             .find(|t| t.name == "products")
             .expect("products table should exist");
-        
+
         assert_eq!(products_table.comment, "Product catalog");
-        assert_eq!(products_table.columns.len(), 7, "products table should have 7 columns");
+        assert_eq!(
+            products_table.columns.len(),
+            7,
+            "products table should have 7 columns"
+        );
 
         // Test 8: Validate orders table and foreign keys
-        let orders_table = schema.tables.iter()
+        let orders_table = schema
+            .tables
+            .iter()
             .find(|t| t.name == "orders")
             .expect("orders table should exist");
-        
+
         assert_eq!(orders_table.comment, "Customer orders");
-        assert_eq!(orders_table.foreign_keys.len(), 1, "orders table should have 1 foreign key");
-        
+        assert_eq!(
+            orders_table.foreign_keys.len(),
+            1,
+            "orders table should have 1 foreign key"
+        );
+
         let fk_orders_customer = &orders_table.foreign_keys[0];
         assert_eq!(fk_orders_customer.name, "fk_orders_customer");
         assert_eq!(fk_orders_customer.columns, vec!["customer_id"]);
@@ -821,22 +857,32 @@ mod test {
         assert_eq!(fk_orders_customer.on_update, "CASCADE");
 
         // Test 9: Validate order_items table and foreign keys
-        let order_items_table = schema.tables.iter()
+        let order_items_table = schema
+            .tables
+            .iter()
             .find(|t| t.name == "order_items")
             .expect("order_items table should exist");
-        
+
         assert_eq!(order_items_table.comment, "Items in orders");
-        assert_eq!(order_items_table.foreign_keys.len(), 2, "order_items table should have 2 foreign keys");
-        
+        assert_eq!(
+            order_items_table.foreign_keys.len(),
+            2,
+            "order_items table should have 2 foreign keys"
+        );
+
         // Verify foreign key to orders
-        let fk_to_orders = order_items_table.foreign_keys.iter()
+        let fk_to_orders = order_items_table
+            .foreign_keys
+            .iter()
             .find(|fk| fk.name == "fk_order_items_order")
             .expect("fk_order_items_order should exist");
         assert_eq!(fk_to_orders.referenced_table, "orders");
         assert_eq!(fk_to_orders.on_delete, "CASCADE");
-        
+
         // Verify foreign key to products
-        let fk_to_products = order_items_table.foreign_keys.iter()
+        let fk_to_products = order_items_table
+            .foreign_keys
+            .iter()
             .find(|fk| fk.name == "fk_order_items_product")
             .expect("fk_order_items_product should exist");
         assert_eq!(fk_to_products.referenced_table, "products");
@@ -846,7 +892,10 @@ mod test {
         assert_eq!(schema.views.len(), 1, "Should have 1 view");
         let customer_orders_view = &schema.views[0];
         assert_eq!(customer_orders_view.name, "customer_orders");
-        assert!(!customer_orders_view.definition.is_empty(), "View definition should not be empty");
+        assert!(
+            !customer_orders_view.definition.is_empty(),
+            "View definition should not be empty"
+        );
 
         // Test 11: Verify procedures (if loaded)
         // Note: Procedures are loaded separately, check count
