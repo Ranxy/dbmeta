@@ -167,19 +167,39 @@ Tests are organized by database driver:
 Test utilities are in `src/tests/utils.rs` and provide helper functions:
 - `init_mysql_test_service()` - Creates MySQL connection config from env vars
 - `init_pg_test_service()` - Creates PostgreSQL connection config from env vars
+- `init_mysql_test_schema()` - Initializes MySQL test database with predefined schema
+- `init_postgres_test_schema()` - Initializes PostgreSQL test database with predefined schema
+
+### Test Fixtures
+
+Test DDL fixtures are located in `tests/fixtures/`:
+- `mysql_schema.sql` - Predefined MySQL schema with tables, indexes, foreign keys, views, and test data
+- `mysql_routines.sql` - MySQL stored procedures and functions (for reference)
+- `postgres_schema.sql` - Predefined PostgreSQL schema with multiple schemas, tables, views, materialized views, custom types, and test data
+
+These fixtures are designed to exercise all metadata features that dbmeta extracts.
 
 ### What Tests Validate
 
-The tests query database metadata including:
+The tests query and validate database metadata including:
 - Database version information
 - List of databases
 - Schemas (PostgreSQL)
-- Tables and their structures
-- Columns and data types
-- Indexes
-- Views and materialized views
-- Foreign keys
+- Tables and their structures (with expected counts and properties)
+- Columns and data types (with type validation and constraints)
+- Indexes (primary keys, unique constraints, composite indexes)
+- Views and materialized views (with definition validation)
+- Foreign keys (with cascade rules and referenced tables)
 - Functions and procedures
+- Comments and metadata
+
+The comprehensive validation tests (`test_mysql_schema_validation` and `test_postgres_schema_validation`) 
+use the predefined fixtures to ensure that:
+1. The correct number of tables, views, and other objects are detected
+2. Column types, constraints, and defaults are correctly extracted
+3. Foreign key relationships and cascade rules are properly captured
+4. Index properties (primary, unique, composite) are accurately represented
+5. View and materialized view definitions are retrieved
 
 ## Troubleshooting
 

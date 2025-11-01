@@ -728,10 +728,195 @@ const VIEW_TABLE_TYPE: &str = "VIEW";
 mod test {
 
     use crate::db::DB;
-
-    use crate::tests::init_mysql_test_service;
+    use crate::tests::{init_mysql_test_schema, init_mysql_test_service};
 
     use super::Driver;
+
+    #[tokio::test]
+    async fn test_mysql_schema_validation() {
+        // Initialize the test configuration
+        let test_config = init_mysql_test_service().unwrap();
+        println!("TEST_CONFIG:{:?}\n", test_config);
+
+        // Initialize the test schema
+        init_mysql_test_schema()
+            .await
+            .expect("Failed to initialize test schema");
+
+        // Create the driver
+        let driver = Driver::create_driver(&test_config).await.unwrap();
+
+        // Test 1: Verify database version
+        let version = driver.get_version().await.unwrap();
+        println!("VERSION:{:?}\n", version);
+        assert!(!version.0.is_empty(), "Version should not be empty");
+
+        // Test 2: Sync database metadata
+        let db = driver.sync_database().await.unwrap();
+        println!("Database metadata: {:?}\n", db);
+
+        // Test 3: Verify database name
+        assert_eq!(db.name, test_config.database, "Database name should match");
+
+        // Test 4: Verify schemas (MySQL uses a single default schema)
+        assert_eq!(db.schemas.len(), 1, "Should have exactly one schema");
+        let schema = &db.schemas[0];
+
+        // Test 5: Verify tables count
+        assert_eq!(
+            schema.tables.len(),
+            4,
+            "Should have 4 tables: customers, products, orders, order_items"
+        );
+
+        // Test 6: Validate customers table
+        let customers_table = schema
+            .tables
+            .iter()
+            .find(|t| t.name == "customers")
+            .expect("customers table should exist");
+
+        assert_eq!(customers_table.comment, "Customer information");
+        assert_eq!(customers_table.engine, "InnoDB");
+        assert_eq!(
+            customers_table.columns.len(),
+            11,
+            "customers table should have 11 columns"
+        );
+
+        // Verify primary key column
+        let customer_id_col = customers_table
+            .columns
+            .iter()
+            .find(|c| c.name == "customer_id")
+            .expect("customer_id column should exist");
+        assert_eq!(customer_id_col.r#type, "int");
+        assert_eq!(customer_id_col.default, "AUTO_INCREMENT");
+        assert!(
+            !customer_id_col.nullable,
+            "customer_id should not be nullable"
+        );
+
+        // Verify email column
+        let email_col = customers_table
+            .columns
+            .iter()
+            .find(|c| c.name == "email")
+            .expect("email column should exist");
+        assert_eq!(email_col.r#type, "varchar(255)");
+        assert!(!email_col.nullable, "email should not be nullable");
+
+        // Verify indexes on customers table
+        assert!(
+            customers_table.indexes.len() >= 3,
+            "customers table should have at least 3 indexes"
+        );
+
+        let primary_idx = customers_table
+            .indexes
+            .iter()
+            .find(|i| i.name == "PRIMARY")
+            .expect("PRIMARY index should exist");
+        assert!(primary_idx.primary, "PRIMARY should be marked as primary");
+        assert!(primary_idx.unique, "PRIMARY should be unique");
+
+        // Test 7: Validate products table
+        let products_table = schema
+            .tables
+            .iter()
+            .find(|t| t.name == "products")
+            .expect("products table should exist");
+
+        assert_eq!(products_table.comment, "Product catalog");
+        assert_eq!(
+            products_table.columns.len(),
+            7,
+            "products table should have 7 columns"
+        );
+
+        // Test 8: Validate orders table and foreign keys
+        let orders_table = schema
+            .tables
+            .iter()
+            .find(|t| t.name == "orders")
+            .expect("orders table should exist");
+
+        assert_eq!(orders_table.comment, "Customer orders");
+        assert_eq!(
+            orders_table.foreign_keys.len(),
+            1,
+            "orders table should have 1 foreign key"
+        );
+
+        let fk_orders_customer = &orders_table.foreign_keys[0];
+        assert_eq!(fk_orders_customer.name, "fk_orders_customer");
+        assert_eq!(fk_orders_customer.columns, vec!["customer_id"]);
+        assert_eq!(fk_orders_customer.referenced_table, "customers");
+        assert_eq!(fk_orders_customer.referenced_columns, vec!["customer_id"]);
+        assert_eq!(fk_orders_customer.on_delete, "CASCADE");
+        assert_eq!(fk_orders_customer.on_update, "CASCADE");
+
+        // Test 9: Validate order_items table and foreign keys
+        let order_items_table = schema
+            .tables
+            .iter()
+            .find(|t| t.name == "order_items")
+            .expect("order_items table should exist");
+
+        assert_eq!(order_items_table.comment, "Items in orders");
+        assert_eq!(
+            order_items_table.foreign_keys.len(),
+            2,
+            "order_items table should have 2 foreign keys"
+        );
+
+        // Verify foreign key to orders
+        let fk_to_orders = order_items_table
+            .foreign_keys
+            .iter()
+            .find(|fk| fk.name == "fk_order_items_order")
+            .expect("fk_order_items_order should exist");
+        assert_eq!(fk_to_orders.referenced_table, "orders");
+        assert_eq!(fk_to_orders.on_delete, "CASCADE");
+
+        // Verify foreign key to products
+        let fk_to_products = order_items_table
+            .foreign_keys
+            .iter()
+            .find(|fk| fk.name == "fk_order_items_product")
+            .expect("fk_order_items_product should exist");
+        assert_eq!(fk_to_products.referenced_table, "products");
+        assert_eq!(fk_to_products.on_delete, "RESTRICT");
+
+        // Test 10: Verify views
+        assert_eq!(schema.views.len(), 1, "Should have 1 view");
+        let customer_orders_view = &schema.views[0];
+        assert_eq!(customer_orders_view.name, "customer_orders");
+        assert!(
+            !customer_orders_view.definition.is_empty(),
+            "View definition should not be empty"
+        );
+
+        // Test 11: Verify procedures are loaded
+        assert_eq!(schema.procedures.len(), 1, "Should have 1 stored procedure");
+        let get_customer_orders_proc = &schema.procedures[0];
+        assert_eq!(get_customer_orders_proc.name, "get_customer_orders");
+        assert!(
+            !get_customer_orders_proc.definition.is_empty(),
+            "Procedure definition should not be empty"
+        );
+
+        // Test 12: Verify functions are loaded
+        assert_eq!(schema.functions.len(), 1, "Should have 1 stored function");
+        let calculate_order_total_func = &schema.functions[0];
+        assert_eq!(calculate_order_total_func.name, "calculate_order_total");
+        assert!(
+            !calculate_order_total_func.definition.is_empty(),
+            "Function definition should not be empty"
+        );
+
+        println!("✓ All MySQL schema validation tests passed!");
+    }
 
     #[tokio::test]
     async fn test_get_version() {
