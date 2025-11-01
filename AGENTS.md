@@ -1,5 +1,9 @@
 # dbmeta - Project Architecture and Components
 
+While working on this project, please remember:
+
+- Always use English in code and comments.
+- Only add meaningful comments when the code's behavior is difficult to understand.
 ## Project Overview
 
 **dbmeta** is an open-source Rust library that provides a unified interface for managing and interacting with multiple database backends. It offers a consistent API for obtaining database metadata across different database systems including MySQL, TiDB, and PostgreSQL.
